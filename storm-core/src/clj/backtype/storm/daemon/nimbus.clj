@@ -1202,5 +1202,5 @@
         (.getHost supervisor)))
     ))
 
-(defn -main []
+(defn -main [] ;;TEST
   (-launch (standalone-nimbus)))
