@@ -65,13 +65,13 @@
     {:conf conf
      :inimbus inimbus
      :submitted-count (atom 0)
-     :storm-cluster-state (cluster/mk-storm-cluster-state conf) ;;初始化
+     :storm-cluster-state (cluster/mk-storm-cluster-state conf) ;;初始化storm-cluster-state在zk中
      :submit-lock (Object.)
      :heartbeats-cache (atom {})
      :downloaders (file-cache-map conf)
      :uploaders (file-cache-map conf)
      :uptime (uptime-computer)
-     :validator (new-instance (conf NIMBUS-TOPOLOGY-VALIDATOR))
+     :validator (new-instance (conf NIMBUS-TOPOLOGY-VALIDATOR)) ;;创建nimubs topology validator实例
      :timer (mk-timer :kill-fn (fn [t]
                                  (log-error t "Error when processing event")
                                  (exit-process! 20 "Error when processing an event")
