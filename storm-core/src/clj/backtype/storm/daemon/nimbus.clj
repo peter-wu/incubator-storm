@@ -59,12 +59,13 @@
     scheduler
     ))
 
+;;保存nimbus实例和配置信息，心跳等信息到一个map中。
 (defn nimbus-data [conf inimbus]
-  (let [forced-scheduler (.getForcedScheduler inimbus)]
+  (let [forced-scheduler (.getForcedScheduler inimbus)];;forced-scheduler这个变量定义没意义，可以换成下划线。就是getForcedScheduler。
     {:conf conf
      :inimbus inimbus
      :submitted-count (atom 0)
-     :storm-cluster-state (cluster/mk-storm-cluster-state conf)
+     :storm-cluster-state (cluster/mk-storm-cluster-state conf) ;;初始化
      :submit-lock (Object.)
      :heartbeats-cache (atom {})
      :downloaders (file-cache-map conf)
@@ -892,12 +893,18 @@
   )
 )
 
+;; 定义nimbus thrift server的业务逻辑
+;; conf为storm.yaml的配置信息
+;; inimubs为nimubs instance(具体实例）
 (defserverfn service-handler [conf inimbus]
+  ;;inimbus的prepare实现为空。只做了下(master-inimbus-dir conf)的事情。
+  ;;(master-inimbus-dir conf)是config.clj中的方法，创建$STORM-LOCAL-DIR/nimubs目录。STORM-LOCAL-DIR为storm.yaml中storm.local.dir配置的值。
+  (log-message "Force create $STORM-LOCAL-DIR/nimubs directory")
   (.prepare inimbus conf (master-inimbus-dir conf))
   (log-message "Starting Nimbus with conf " conf)
-  (let [nimbus (nimbus-data conf inimbus)]
-    (.prepare ^backtype.storm.nimbus.ITopologyValidator (:validator nimbus) conf)
-    (cleanup-corrupt-topologies! nimbus)
+  (let [nimbus (nimbus-data conf inimbus)] ;;根据配置和nimbus实例创建nimbus-data这个数据结构。
+    (.prepare ^backtype.storm.nimbus.ITopologyValidator (:validator nimbus) conf) ;;预处理检查Topology
+    (cleanup-corrupt-topologies! nimbus) ;;清除损坏的topology
     (doseq [storm-id (.active-storms (:storm-cluster-state nimbus))]
       (transition! nimbus storm-id :startup))
     (schedule-recurring (:timer nimbus)
@@ -1147,9 +1154,11 @@
       (waiting? [this]
         (timer-waiting? (:timer nimbus))))))
 
+;;启动thrift服务
 (defn launch-server! [conf nimbus]
   (validate-distributed-mode! conf)
-  (let [service-handler (service-handler conf nimbus)
+  (let [service-handler (service-handler conf nimbus)  ;;具体的processor代码。具体的业务处理逻辑再这里。
+                                                          ;; service-handler就是用defserverfn宏定义出的函数，defserverfn的作用是try...catch了几个异常信息。
         options (-> (TNonblockingServerSocket. (int (conf NIMBUS-THRIFT-PORT)))
                     (THsHaServer$Args.)
                     (.workerThreads 64)
@@ -1157,10 +1166,12 @@
                     (.processor (Nimbus$Processor. service-handler))
                     )
        server (THsHaServer. (do (set! (. options maxReadBufferBytes)(conf NIMBUS-THRIFT-MAX-BUFFER-SIZE)) options))]
+    ;;添加进程关闭的hook。在thrift server进程关闭时，先关闭service-handler，再关闭server
     (add-shutdown-hook-with-force-kill-in-1-sec (fn []
                                                   (.shutdown service-handler)
                                                   (.stop server)))
     (log-message "Starting Nimbus server...")
+    ;;启动nimubs thrift server
     (.serve server)))
 
 ;; distributed implementation
@@ -1180,27 +1191,30 @@
   nil
   )
 
+;;启动nimubs的thrift服务。
+;;(read-storm-config)：调用config.clj的read-storm-config方法去校验并读取storm.yaml配置信息。默认读取-Dstorm.conf.file指定的配置，如果没找到这个配置就找当前目录下的storm.yaml配置。
+;;nimubs：就是个INimbus实例
 (defn -launch [nimbus]
   (launch-server! (read-storm-config) nimbus))
 
-(defn standalone-nimbus []
+(defn standalone-nimbus [] ;;构造一个INimbus实例。
   (reify INimbus
-    (prepare [this conf local-dir]
+    (prepare [this conf local-dir] ;;预备函数，此处什么都不做
       )
-    (allSlotsAvailableForScheduling [this supervisors topologies topologies-missing-assignments]
+    (allSlotsAvailableForScheduling [this supervisors topologies topologies-missing-assignments] ;;获取supervisor的WorkerSlots。并放入一个set中,大概的数据结果为：#{ws1,ws2,ws3...}
       (->> supervisors
            (mapcat (fn [^SupervisorDetails s]
                      (for [p (.getMeta s)]
                        (WorkerSlot. (.getId s) p))))
            set ))
-    (assignSlots [this topology slots]
+    (assignSlots [this topology slots] ;;如果zk中的assign变动，则调用这个函数。目前这个函数什么都不做。
       )
     (getForcedScheduler [this]
       nil )
-    (getHostName [this supervisors node-id]
+    (getHostName [this supervisors node-id] ;;根据node-id，从supervisors中获取指定supervisor的host值。
       (if-let [^SupervisorDetails supervisor (get supervisors node-id)]
         (.getHost supervisor)))
     ))
 
-(defn -main [] ;;TEST
+(defn -main [] ;;入口
   (-launch (standalone-nimbus)))
