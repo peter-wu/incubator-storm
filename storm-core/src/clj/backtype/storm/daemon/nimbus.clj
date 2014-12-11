@@ -904,9 +904,11 @@
   (log-message "Starting Nimbus with conf " conf)
   (let [nimbus (nimbus-data conf inimbus)] ;;根据配置和nimbus实例创建nimbus-data这个数据结构。
     (.prepare ^backtype.storm.nimbus.ITopologyValidator (:validator nimbus) conf) ;;预处理检查Topology
-    (cleanup-corrupt-topologies! nimbus) ;;清除损坏的topology
-    (doseq [storm-id (.active-storms (:storm-cluster-state nimbus))]
+    (cleanup-corrupt-topologies! nimbus) ;;清除状态不是active的topology
+    ;;TODO transition!是干嘛的？
+    (doseq [storm-id (.active-storms (:storm-cluster-state nimbus))] ;;
       (transition! nimbus storm-id :startup))
+    ;;TODO schedule-recurring是干嘛的？
     (schedule-recurring (:timer nimbus)
                         0
                         (conf NIMBUS-MONITOR-FREQ-SECS)
@@ -922,7 +924,8 @@
                         (conf NIMBUS-CLEANUP-INBOX-FREQ-SECS)
                         (fn []
                           (clean-inbox (inbox nimbus) (conf NIMBUS-INBOX-JAR-EXPIRATION-SECS))
-                          ))    
+                          ))
+    ;;实现具体的nimubs service代码
     (reify Nimbus$Iface
       (^void submitTopologyWithOpts
         [this ^String storm-name ^String uploadedJarLocation ^String serializedConf ^StormTopology topology
